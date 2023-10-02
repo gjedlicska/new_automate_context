@@ -9,13 +9,16 @@ from speckle_automate import (
     AutomationContext,
     execute_automate_function,
 )
-
-from specklepy.transports.server import ServerTransport
-from specklepy.api.operations import receive
-from specklepy.api.client import SpeckleClient
-from specklepy.api.models import Branch
 #from flatten import flatten_base
-from run_context import run as run_context
+import numpy as np 
+
+from specklepy.objects import Base
+
+from utils.utils_osm import getBuildings, getRoads
+from utils.utils_other import RESULT_BRANCH
+from specklepy.objects.other import Collection
+
+
 
 class FunctionInputs(AutomateBase):
     """These are function author defined values.
@@ -25,7 +28,7 @@ class FunctionInputs(AutomateBase):
     https://docs.pydantic.dev/latest/usage/models/
     """
 
-    radius_in_meters: str = Field(
+    radius_in_meters: float = Field(
         title="Radius in meters",
         description=(
             "Radius from the Model location,"
@@ -47,63 +50,50 @@ def automate_function(
             It also has conveniece methods attach result data to the Speckle model.
         function_inputs: An instance object matching the defined schema.
     """
-    # the context provides a conveniet way, to receive the triggering version
-    r'''
-    version_root_object = automate_context.receive_version()
-    count = 0
-    for b in flatten_base(version_root_object):
-        if b.speckle_type == function_inputs.forbidden_speckle_type:
-            if not b.id:
-                raise ValueError("Cannot operate on objects without their id's.")
-            automate_context.add_object_error(
-                b.id,
-                "This project should not contain the type: " f"{b.speckle_type}",
-            )
-            count += 1
+    try:
+        base = automate_context.receive_version()
 
-    if count > 0:
-        # this is how a run is marked with a failure cause
-        automate_context.mark_run_failed(
-            "Automation failed: "
-            f"Found {count} object that have one of the forbidden speckle types: "
-            f"{function_inputs.forbidden_speckle_type}"
-        )
+        project_id = automate_context.automation_run_data.project_id
+        projInfo = base["info"] #[o for o in objects if o.speckle_type.endswith("Revit.ProjectInfo")][0] 
+        
+        lon = np.rad2deg(projInfo["longitude"])
+        lat = np.rad2deg(projInfo["latitude"])
+        angle_deg = 0
+        try: 
+            angle_rad = projInfo["locations"][0]["trueNorth"]
+            angle_deg = np.rad2deg(angle_rad)
+        except: pass 
 
-    else:
-        automate_context.mark_run_success("No forbidden types found.")
-    ''' 
-    # schema comes from automate 
-    project_data = automate_context.automation_run_data #SpeckleProjectData.model_validate_json(speckle_project_data)
-    # defined by function author (above). Optional 
-    #inputs = FunctionInputs.model_validate_json(function_inputs)
+        crsObj = None
+        commitObj = Collection(elements = [], units = "m", name = "Context", collectionType = "BuildingsLayer")
 
-    base = automate_context.receive_version()
+        blds = getBuildings(lat, lon, function_inputs.radius_in_meters)
+        bases = [Base(units = "m", displayValue = [b]) for b in blds]
+        bldObj = Collection(elements = bases, units = "m", name = "Context", collectionType = "BuildingsLayer")
+            
+        roads, meshes, analysisMeshes = getRoads(lat, lon, function_inputs.radius_in_meters)
+        roadObj = Collection(elements = roads, units = "m", name = "Context", collectionType = "RoadsLayer")
+        roadMeshObj = Collection(elements = meshes, units = "m", name = "Context", collectionType = "RoadMeshesLayer")
+        analysisObj = Collection(elements = analysisMeshes, units = "m", name = "Context", collectionType = "RoadAnalysisLayer")
+        
+        # create branch if needed 
+        existing_branch = automate_context.speckle_client.branch.get(project_id, RESULT_BRANCH, 1)  
+        if existing_branch is None: 
+            br_id = automate_context.speckle_client.branch.create(stream_id = project_id, name = RESULT_BRANCH, description = "") 
+        else:
+            br_id = existing_branch.id
+        commitObj.elements.append(bldObj)
+        commitObj.elements.append(roadObj)
+        commitObj.elements.append(roadMeshObj)
 
-    # client = SpeckleClient(project_data.speckle_server_url, use_ssl=False)
-    #client.authenticate_with_token(automate_context._speckle_token)
-    #client = automate_context.speckle_client
-    # branch: Branch = client.branch.get(project_data.project_id, project_data.model_id, 1)
+        automate_context.create_new_version_in_project(commitObj, br_id, "Context from Automate")
+        # automate_context.compose_result_view()
+        automate_context._automation_result.result_view = f"{automate_context.automation_run_data.speckle_server_url}/projects/{automate_context.automation_run_data.project_id}/models/{automate_context.automation_run_data.model_id},{br_id}"
+        # https://latest.speckle.systems/
 
-    #server_transport = ServerTransport(project_data.project_id, client)
-    #base = receive(branch.commits.items[0].referencedObject, server_transport)
-    
-    #base = automate_context.receive_version()
-    run_context(automate_context.speckle_client, server_transport, base, float(function_inputs.radius_in_meters))
-    automate_context.mark_run_success("Hopefully there were no errors.")
-
-    # if the function generates file results, this is how it can be
-    # attached to the Speckle project / model
-    # automate_context.store_file_result("./report.pdf")
-
-
-def automate_function_without_inputs(automate_context: AutomationContext) -> None:
-    """A function example without inputs.
-
-    If your function does not need any input variables,
-     besides what the automation context provides,
-     the inputs argument can be omitted.
-    """
-    pass
+        automate_context.mark_run_success("Created 3D context")
+    except Exception as ex:
+        automate_context.mark_run_failed(f"Failed to create 3d context cause: {ex}")
 
 
 # make sure to call the function with the executor
