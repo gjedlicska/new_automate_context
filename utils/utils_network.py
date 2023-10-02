@@ -1,6 +1,6 @@
 import math
 from typing import List
-from pandana.loaders import osm
+#from pandana.loaders import osm
 import pandas as pd 
 
 from specklepy.objects import Base
