@@ -77,16 +77,18 @@ def automate_function(
     # defined by function author (above). Optional 
     #inputs = FunctionInputs.model_validate_json(function_inputs)
 
-    client = SpeckleClient(project_data.speckle_server_url, use_ssl=False)
+    base = automate_context.receive_version()
+
+    # client = SpeckleClient(project_data.speckle_server_url, use_ssl=False)
     #client.authenticate_with_token(automate_context._speckle_token)
     #client = automate_context.speckle_client
-    branch: Branch = client.branch.get(project_data.project_id, project_data.model_id, 1)
+    # branch: Branch = client.branch.get(project_data.project_id, project_data.model_id, 1)
 
-    server_transport = ServerTransport(project_data.project_id, client)
-    base = receive(branch.commits.items[0].referencedObject, server_transport)
+    #server_transport = ServerTransport(project_data.project_id, client)
+    #base = receive(branch.commits.items[0].referencedObject, server_transport)
     
     #base = automate_context.receive_version()
-    run_context(client, server_transport, base, float(function_inputs.radius_in_meters))
+    run_context(automate_context.speckle_client, server_transport, base, float(function_inputs.radius_in_meters))
     automate_context.mark_run_success("Hopefully there were no errors.")
 
     # if the function generates file results, this is how it can be

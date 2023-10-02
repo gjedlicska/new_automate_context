@@ -1,19 +1,17 @@
 
-from specklepy.api.operations import receive, send
-from specklepy.api.client import SpeckleClient
+from speckle_automate import AutomationContext
 from specklepy.objects import Base
 from specklepy.objects.other import Collection
-from specklepy.api.models import Branch 
 
 #from utils.utils_network import calculateAccessibility
 from utils.utils_osm import getBuildings, getRoads
 from utils.utils_other import RESULT_BRANCH
 
-def run(client, server_transport, base, radius_in_meters): 
+def run(automate_context: AutomationContext, base, radius_in_meters): 
     try:
 
         import numpy as np 
-        project_id = server_transport.stream_id
+        project_id = automate_context.automation_run_data.project_id
         projInfo = base["info"] #[o for o in objects if o.speckle_type.endswith("Revit.ProjectInfo")][0] 
         
         lon = np.rad2deg(projInfo["longitude"])
@@ -37,23 +35,22 @@ def run(client, server_transport, base, radius_in_meters):
         analysisObj = Collection(elements = analysisMeshes, units = "m", name = "Context", collectionType = "RoadAnalysisLayer")
         
         # create branch if needed 
-        existing_branch = client.branch.get(project_id, RESULT_BRANCH, 1)  
+        existing_branch = automate_context.speckle_client.branch.get(project_id, RESULT_BRANCH, 1)  
         if existing_branch is None: 
-            br_id = client.branch.create(stream_id = project_id, name = RESULT_BRANCH, description = "") 
-
+            br_id = automate_context.speckle_client.branch.create(stream_id = project_id, name = RESULT_BRANCH, description = "") 
+        else:
+            br_id = existing_branch.id
         commitObj.elements.append(base)
         commitObj.elements.append(bldObj)
         commitObj.elements.append(roadObj)
         commitObj.elements.append(roadMeshObj)
 
-        objId = send(commitObj, transports=[server_transport]) 
-        commit_id = client.commit.create(
-                    stream_id=project_id,
-                    object_id=objId,
-                    branch_name=RESULT_BRANCH,
-                    message="Context from Automate",
-                    source_application="Python",
-                )
+        automate_context.create_new_version_in_project(commitObj, br_id, "Context from Automate")
+        # automate_context.compose_result_view()
+        automate_context._automation_result.result_view = f"{automate_context.automation_run_data.speckle_server_url}/projects/{automate_context.automation_run_data.project_id}/models/{automate_context.automation_run_data.model_id},{br_id}"
+        # https://latest.speckle.systems/
+
+
         r'''
         commitObj.elements = []
         commitObj.elements.append(bldObj)
