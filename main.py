@@ -10,8 +10,12 @@ from speckle_automate import (
     execute_automate_function,
 )
 
-from flatten import flatten_base
-
+from specklepy.transports.server import ServerTransport
+from specklepy.api.operations import receive
+from specklepy.api.client import SpeckleClient
+from specklepy.api.models import Branch
+#from flatten import flatten_base
+from run_context import run as run_context
 
 class FunctionInputs(AutomateBase):
     """These are function author defined values.
@@ -21,11 +25,11 @@ class FunctionInputs(AutomateBase):
     https://docs.pydantic.dev/latest/usage/models/
     """
 
-    forbidden_speckle_type: str = Field(
-        title="Forbidden speckle type",
+    radius_in_meters: str = Field(
+        title="Radius in meters",
         description=(
-            "If a object has the following speckle_type,"
-            " it will be marked with an error."
+            "Radius from the Model location,"
+            " derived from Revit model lat, lon."
         ),
     )
 
@@ -44,8 +48,8 @@ def automate_function(
         function_inputs: An instance object matching the defined schema.
     """
     # the context provides a conveniet way, to receive the triggering version
+    r'''
     version_root_object = automate_context.receive_version()
-
     count = 0
     for b in flatten_base(version_root_object):
         if b.speckle_type == function_inputs.forbidden_speckle_type:
@@ -67,6 +71,23 @@ def automate_function(
 
     else:
         automate_context.mark_run_success("No forbidden types found.")
+    ''' 
+    # schema comes from automate 
+    project_data = automate_context.automation_run_data #SpeckleProjectData.model_validate_json(speckle_project_data)
+    # defined by function author (above). Optional 
+    #inputs = FunctionInputs.model_validate_json(function_inputs)
+
+    client = SpeckleClient(project_data.speckle_server_url, use_ssl=False)
+    #client.authenticate_with_token(automate_context._speckle_token)
+    #client = automate_context.speckle_client
+    branch: Branch = client.branch.get(project_data.project_id, project_data.model_id, 1)
+
+    server_transport = ServerTransport(project_data.project_id, client)
+    base = receive(branch.commits.items[0].referencedObject, server_transport)
+    
+    #base = automate_context.receive_version()
+    run_context(client, server_transport, base, float(function_inputs.radius_in_meters))
+    automate_context.mark_run_success("Hopefully there were no errors.")
 
     # if the function generates file results, this is how it can be
     # attached to the Speckle project / model
