@@ -93,7 +93,7 @@ def automate_function(
         print(f"Branch_id={br_id}")
         #print(f"CommitObj={commitObj}")
 
-        automate_context.create_new_version_in_project(commitObj, RESULT_BRANCH, "Context from Automate")
+        automate_context.create_new_version_in_project(commitObj, br_id, "Context from Automate")
         print(f"Created id={automate_context._automation_result.result_versions[len(automate_context._automation_result.result_versions)-1]}")
         # automate_context.compose_result_view()
         automate_context._automation_result.result_view = f"{automate_context.automation_run_data.speckle_server_url}/projects/{automate_context.automation_run_data.project_id}/models/{automate_context.automation_run_data.model_id},{br_id}"
