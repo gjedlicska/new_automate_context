@@ -67,7 +67,7 @@ def automate_function(
         crsObj = None
         commitObj = Collection(elements = [], units = "m", name = "Context", collectionType = "BuildingsLayer")
 
-        r'''
+        
         blds = getBuildings(lat, lon, function_inputs.radius_in_meters)
         bases = [Base(units = "m", displayValue = [b]) for b in blds]
         bldObj = Collection(elements = bases, units = "m", name = "Context", collectionType = "BuildingsLayer")
@@ -80,7 +80,7 @@ def automate_function(
         commitObj.elements.append(bldObj)
         commitObj.elements.append(roadObj)
         commitObj.elements.append(roadMeshObj)
-        '''
+        
 
         # create branch if needed 
         existing_branch = automate_context.speckle_client.branch.get(project_id, RESULT_BRANCH, 1)  
@@ -88,10 +88,10 @@ def automate_function(
             br_id = automate_context.speckle_client.branch.create(stream_id = project_id, name = RESULT_BRANCH, description = "") 
         else:
             br_id = existing_branch.id
-        commitObj.elements.append(base)
+        #commitObj.elements.append(base)
 
         print(f"Branch_id={br_id}")
-        print(f"CommitObj={commitObj}")
+        #print(f"CommitObj={commitObj}")
 
         automate_context.create_new_version_in_project(commitObj, RESULT_BRANCH, "Context from Automate")
         print(f"Created id={automate_context._automation_result.result_versions[len(automate_context._automation_result.result_versions)-1]}")
