@@ -2,22 +2,20 @@
 
 use the automation_context module to wrap your function in an Autamate context helper
 """
-
+# from flatten import flatten_base
+import numpy as np
+from attrs import define
 from pydantic import Field
 from speckle_automate import (
     AutomateBase,
     AutomationContext,
     execute_automate_function,
 )
-#from flatten import flatten_base
-import numpy as np 
-
 from specklepy.objects import Base
+from specklepy.objects.other import Collection
 
 from utils.utils_osm import getBuildings, getRoads
 from utils.utils_other import RESULT_BRANCH
-from specklepy.objects.other import Collection
-
 
 
 class FunctionInputs(AutomateBase):
@@ -31,8 +29,7 @@ class FunctionInputs(AutomateBase):
     radius_in_meters: float = Field(
         title="Radius in meters",
         description=(
-            "Radius from the Model location,"
-            " derived from Revit model lat, lon."
+            "Radius from the Model location," " derived from Revit model lat, lon."
         ),
     )
 
@@ -51,50 +48,63 @@ def automate_function(
         function_inputs: An instance object matching the defined schema.
     """
     try:
+        # automate_context.version_source_application()
         base = automate_context.receive_version()
 
         project_id = automate_context.automation_run_data.project_id
-        projInfo = base["info"] #[o for o in objects if o.speckle_type.endswith("Revit.ProjectInfo")][0] 
-        
-        lon = np.rad2deg(projInfo["longitude"])
-        lat = np.rad2deg(projInfo["latitude"])
-        angle_deg = 0
-        try: 
-            angle_rad = projInfo["locations"][0]["trueNorth"]
-            angle_deg = np.rad2deg(angle_rad)
-        except: pass 
 
-        crsObj = None
-        commitObj = Collection(elements = [], units = "m", name = "Context", collectionType = "BuildingsLayer")
+        project_location = get_project_location(base)
 
-        
-        blds = getBuildings(lat, lon, function_inputs.radius_in_meters)
-        bases = [Base(units = "m", displayValue = [b]) for b in blds]
-        bldObj = Collection(elements = bases, units = "m", name = "Context", collectionType = "BuildingsLayer")
-            
-        roads, meshes, analysisMeshes = getRoads(lat, lon, function_inputs.radius_in_meters)
-        roadObj = Collection(elements = roads, units = "m", name = "Context", collectionType = "RoadsLayer")
-        roadMeshObj = Collection(elements = meshes, units = "m", name = "Context", collectionType = "RoadMeshesLayer")
-        
-        # add objects to new Collection 
+        blds = getBuildings(
+            project_location.latitude,
+            project_location.longitude,
+            function_inputs.radius_in_meters,
+        )
+        bases = [Base(units="m", displayValue=[b]) for b in blds]
+        bldObj = Collection(
+            elements=bases, units="m", name="Context", collectionType="BuildingsLayer"
+        )
+
+        roads, meshes, analysisMeshes = getRoads(
+            lat, lon, function_inputs.radius_in_meters
+        )
+        roadObj = Collection(
+            elements=roads, units="m", name="Context", collectionType="RoadsLayer"
+        )
+        roadMeshObj = Collection(
+            elements=meshes, units="m", name="Context", collectionType="RoadMeshesLayer"
+        )
+
+        commitObj = Collection(
+            elements=[], units="m", name="Context", collectionType="BuildingsLayer"
+        )
+
+        # add objects to new Collection
         commitObj.elements.append(bldObj)
         commitObj.elements.append(roadObj)
         commitObj.elements.append(roadMeshObj)
-        
 
-        # create branch if needed 
-        existing_branch = automate_context.speckle_client.branch.get(project_id, RESULT_BRANCH, 1)  
-        if existing_branch is None: 
-            br_id = automate_context.speckle_client.branch.create(stream_id = project_id, name = RESULT_BRANCH, description = "") 
+        # create branch if needed
+        existing_branch = automate_context.speckle_client.branch.get(
+            project_id, RESULT_BRANCH, 1
+        )
+        if existing_branch is None:
+            br_id = automate_context.speckle_client.branch.create(
+                stream_id=project_id, name=RESULT_BRANCH, description=""
+            )
         else:
             br_id = existing_branch.id
-        #commitObj.elements.append(base)
+        # commitObj.elements.append(base)
 
         print(f"Branch_id={br_id}")
-        #print(f"CommitObj={commitObj}")
+        # print(f"CommitObj={commitObj}")
 
-        automate_context.create_new_version_in_project(commitObj, br_id, "Context from Automate")
-        print(f"Created id={automate_context._automation_result.result_versions[len(automate_context._automation_result.result_versions)-1]}")
+        automate_context.create_new_version_in_project(
+            commitObj, br_id, "Context from Automate"
+        )
+        print(
+            f"Created id={automate_context._automation_result.result_versions[len(automate_context._automation_result.result_versions)-1]}"
+        )
         # automate_context.compose_result_view()
         automate_context._automation_result.result_view = f"{automate_context.automation_run_data.speckle_server_url}/projects/{automate_context.automation_run_data.project_id}/models/{automate_context.automation_run_data.model_id},{br_id}"
         # https://latest.speckle.systems/
